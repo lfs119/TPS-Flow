@@ -23,7 +23,7 @@ pip install -U vina meeko
 ## MD topology and coordinates
 
 ```
-https://zenodo.org/records/17233825
+https://zenodo.org/records/17233825  and  https://zenodo.org/records/15687037
 ```
 
 

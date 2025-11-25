@@ -1,6 +1,6 @@
 # TPS-FLOW
 
-Implementation of[Enhanced Hybrid Physical and Flow-Based Generative Modeling for Transition Path Sampling of Membrane Protein Dynamics toward Tuberculosis Drug Discovery]
+Implementation of[Enhanced Hybrid Physical and Flow-Based Generative Modeling for Transition Path Sampling of Membrane Protein Dynamics]
 
 
 ## Abstract

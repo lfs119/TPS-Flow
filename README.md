@@ -100,16 +100,10 @@ TMscore model.pdb native.pdb
 ## Acknowledgement
 ```
 The code is based on the following repositories:
-https://github.com/bjing2016/mdgen.git
+https://github.com/bjing2016/mdgen
 
 ```
 
-## Acknowledgement
-```
-The code is based on the following repositories:
-https://github.com/bjing2016/mdgen.git
-
-```
 
 ## Lincense
 ```

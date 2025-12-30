@@ -1,3 +1,4 @@
+
 import argparse
 import copy
 import json
@@ -19,43 +20,24 @@ parser.add_argument('--relax', action='store_true')
 parser.add_argument('--sample', type=str, default="linear", choices=["linear", "uniform"])
 
 args = parser.parse_args()
-import mdgen.analysis
+args = parser.parse_args()
+import tps_flow.analysis
 import os, torch, mdtraj, tqdm
-from mdgen.geometry import atom14_to_atom37, atom37_to_torsions
-from mdgen.tensor_utils import tensor_tree_map
-from mdgen.utils import atom14_to_pdb
+from tps_flow.geometry import atom14_to_atom37, atom37_to_torsions
+from tps_flow.tensor_utils import tensor_tree_map
+from tps_flow.utils import atom14_to_pdb
 
-from mdgen.residue_constants import restype_order
-from mdgen.wrapper import NewMDGenWrapper
-from mdgen.dataset import atom14_to_frames
+from tps_flow.residue_constants import restype_order
+from tps_flow.wrapper import TPS_Flow
+from tps_flow.dataset import atom14_to_frames
 import pandas as pd
 import contextlib
 import numpy as np
 from pyrosetta import *
 import timeit
 from Bio.PDB.PDBParser import PDBParser
-import mdgen.residue_constants as rc
+import tps_flow.residue_constants as rc
 
-
-
-def initialize(repeat, cycle, seed):
-    init_cmd = list()
-    init_cmd.append("-mute all")
-    init_cmd.append(f"-relax:default_repeats {repeat}")
-    init_cmd.append(f"-default_max_cycles {cycle}")
-    init_cmd.append(f"-run:constant_seed -run:jran {seed}")
-    init_cmd.append("-relax:constrain_relax_to_start_coords")
-    init_cmd.append("-relax:ramp_constraints false")
-    init_cmd.append("-relax:dualspace true -relax::minimize_bond_angles")
-    init_cmd.append("-relax:jump_move true -relax:bb_move true -relax:chi_move true")
-    init(" ".join(init_cmd))
-
-def fastrelax(input, output):
-    pose = pose_from_file(input)
-    scorefxn = create_score_function('ref2015_cart')
-    fr = pyrosetta.rosetta.protocols.relax.FastRelax(scorefxn)
-    fr.apply(pose)
-    pose.dump_pdb(output)
 
 def structure_to_atom14(structure):
     residue_count = len(list(structure.get_residues()))
@@ -92,8 +74,8 @@ def get_sample(arr, seqres, start_idxs, end_idxs, start_state, end_state, num_fr
     # start_idxs = np.array([7782, 37704])
     # end_idxs = np.array([5191, 2644])
 
-    start_idx = start_idxs   # close
-    end_idx = end_idxs     # open
+    start_idx = 100
+    end_idx = 4900
     
     select_energy = energy 
     if (energy > -1000).all()  and len(energy) > 10:
@@ -105,45 +87,9 @@ def get_sample(arr, seqres, start_idxs, end_idxs, start_state, end_state, num_fr
             select_energy[-1] = end_energy
         else:
             select_energy = np.linspace(start_energy, end_energy, num_frames, dtype=np.float32)
-        # select_energy = start_energy.expand(num_frames,).clone()
-        # select_energy[-1] = end_energy
-        # select_energy = np.linspace(start_energy, end_energy, num_frames, dtype=np.float32)
-        # select_energy = np.random.uniform(start_energy, end_energy, num_frames).astype(np.float32)
-        # select_energy[0] = start_energy
-        # select_energy[-1] = end_energy
+       
     start_arr = np.copy(arr[start_idx:start_idx + 1][:, :len(seqres)]).astype(np.float32)  # (1, L, 14, 3)
-    end_arr = np.copy(arr[end_idx:end_idx + 1][:, :len(seqres)]).astype(np.float32)    
-
-    path_end_relax = os.path.join(args.out_dir, 'end_arr_relax_fixed.pdb')
-    if rosetta_relax and not os.path.exists(path_end_relax):
-        atom14s = np.concatenate((start_arr, end_arr), axis=0)
-        path = os.path.join(args.out_dir, 'tmp.pdb')
-        seqres_ = np.array([restype_order[c] for c in seqres])
-        atom14_to_pdb(atom14s, seqres_, path)
-        traj = mdtraj.load(path)
-        traj.superpose(traj)
-        path_start = os.path.join(args.out_dir, 'start_arr.pdb')
-        path_start_relax = os.path.join(args.out_dir, 'start_arr_relax_fixed.pdb')
-        path_end = os.path.join(args.out_dir, 'end_arr.pdb')
-        path_end_relax = os.path.join(args.out_dir, 'end_arr_relax_fixed.pdb')
-        traj[0].save(path_start)
-        traj[1].save(path_end)
-        start_time = timeit.default_timer()
-        initialize(2, 10, 0)
-        print("Performing FastRelax...")
-        fastrelax(path_start, path_start_relax)
-        fastrelax(path_end, path_end_relax)
-        end_time = timeit.default_timer()
-        print('Running time: {:.2f}s'.format(end_time - start_time))
-
-        # read in pdb file
-        parser = PDBParser()
-        structure_start = parser.get_structure('example', path_start_relax)
-        start_arr = structure_to_atom14(structure_start).astype(np.float32)
-
-        structure_end = parser.get_structure('example', path_end_relax)
-        end_arr = structure_to_atom14(structure_end).astype(np.float32)
-        
+    end_arr = np.copy(arr[end_idx:end_idx + 1][:, :len(seqres)]).astype(np.float32)         
         
     seqres = torch.tensor([restype_order[c] for c in seqres])
     start_frames = atom14_to_frames(torch.from_numpy(start_arr))
@@ -185,57 +131,7 @@ def do(model, name, seqres):
     if os.path.exists(f'{args.out_dir}/{name}_metadata.json'):
         pass
         # return
-    # if os.path.exists(f'{args.out_dir}/{name}_metadata.pkl'):
-    #     pkl_metadata = pickle.load(open(f'{args.out_dir}/{name}_metadata.pkl', 'rb'))
-    #     msm = pkl_metadata['msm']
-    #     cmsm = pkl_metadata['cmsm']
-    #     ref_kmeans = pkl_metadata['ref_kmeans']
-    # # if os.path.exists(f'{args.mddir}/{name}_metadata.pkl'):
-    # #     pkl_metadata = pickle.load(open(f'{args.mddir}/{name}_metadata.pkl', 'rb'))
-    # #     msm = pkl_metadata['msm']
-    # #     cmsm = pkl_metadata['cmsm']
-    # #     ref_kmeans = pkl_metadata['ref_kmeans']
-    # else:
-    #     with temp_seed(137):
-    #         top_file = os.path.join(args.mddir, 'apo_sol_strip_wat_lipid.prmtop')
-    #         # feats, ref = mdgen.analysis.get_featurized_traj(f'{args.mddir}/{name}/{name}', sidechains=True)
-    #         # feats, ref = mdgen.analysis.get_featurized_traj_rMD(top_file, f'{args.mddir}/{xtc_name}.xtc',sidechains=True)
 
-    #         feats, ref = mdgen.analysis.get_featurized_traj_nc_apo(f'{args.mddir}/{name}.nc', top_file, sidechains=True) # /home/xk/mount/md_file
-    #         #
-    #         tica, _ = mdgen.analysis.get_tica(ref, lag=40)
-    #         kmeans, ref_kmeans = mdgen.analysis.get_kmeans(tica.transform(ref), k=4)
-    #         try:
-    #             msm, pcca, cmsm = mdgen.analysis.get_msm(ref_kmeans, lag=40, nstates=4)
-
-    #         # tica, _ = mdgen.analysis.get_tica(ref)
-    #         # kmeans, ref_kmeans = mdgen.analysis.get_kmeans(tica.transform(ref))
-    #         # try:
-    #         #     msm, pcca, cmsm = mdgen.analysis.get_msm(ref_kmeans)
-    #         except Exception as e:
-    #             print('ERROR', e, name, flush=True)
-    #             return
-    #     pickle.dump({
-    #         'msm': msm,
-    #         'cmsm': cmsm,
-    #         'tica': tica,
-    #         'pcca': pcca,
-    #         'kmeans': kmeans,
-    #         'ref_kmeans': ref_kmeans,
-    #     }, open(f'{args.out_dir}/{name}_metadata.pkl', 'wb'))
-
-    # flux_mat = cmsm.transition_matrix * cmsm.pi[None, :]
-    # flux_mat[flux_mat < 0.0000001] = np.inf  # set 0 flux to inf so we do not choose that as the argmin
-    # start_state, end_state = np.unravel_index(np.argmin(flux_mat, axis=None), flux_mat.shape) # 索引转换为一个元组
-    # ref_discrete = msm.metastable_assignments[ref_kmeans]
-    # start_idxs = np.where(ref_discrete == start_state)[0]
-    # end_idxs = np.where(ref_discrete == end_state)[0]  #([])->[]
-    # if (ref_discrete == start_state).sum() == 0 or (ref_discrete == end_state).sum() == 0:
-    #     print('No start or end state found for ', name, 'skipping...')
-    #     return
-
-    # arr = np.lib.format.open_memmap(f'{args.data_dir}/{name}{args.suffix}.npy', 'r') #(999999, 4, 14, 3)
-    # arr = np.lib.format.open_memmap(f'{args.data_dir}/{name}.npy', 'r') #(999999, 4, 14, 3)
     print(f'name: {name}')
     arr = np.lib.format.open_memmap(f'{args.data_dir}/{name}.npy', 'r')
     print(f'shape of data:', arr.shape)
@@ -283,10 +179,11 @@ def do(model, name, seqres):
     json.dump(metadata, open(f'{args.out_dir}/{name}_metadata.json', 'w'))
 
 
+
 @torch.no_grad()
 def main():
 
-    model = NewMDGenWrapper.load_from_checkpoint(args.sim_ckpt)
+    model = TPS_Flow.load_from_checkpoint(args.sim_ckpt)
     model.eval().to('cuda')
     add_ckpt = os.path.splitext(os.path.basename(args.sim_ckpt))[0]
     args.out_dir = os.path.join(args.out_dir, add_ckpt)
@@ -299,24 +196,12 @@ def main():
             continue
         do(model, name, df.seqres[name][:model.args.crop])
 
-    # model = NewMDGenWrapper.load_from_checkpoint(args.sim_ckpt)
-    # model.eval().to('cuda')
-    # df = pd.read_csv(args.split, index_col='name')
-    # names = np.array(df.index)
-
-    # chunks = np.array_split(names, args.n_chunks)
-    # chunk = chunks[args.chunk_idx]
-    # print('#' * 20)
-    # print(f'RUN NUMBER: {args.chunk_idx}, PROCESSING IDXS {args.chunk_idx * len(chunk)}-{(args.chunk_idx + 1) * len(chunk)}')
-    # print('#' * 20)
-    # for name in tqdm.tqdm(chunk, desc='num peptides'):
-    #     if args.pdb_id and name not in args.pdb_id:
-    #         continue
-    #     do(model, name, df.seqres[name])
 
 
 main()
 
 # --sim_ckpt interpolation.ckpt --data_dir data/4AA_data --num_frames 100 --split splits/4AA_test_litter.csv --suffix _i100 --mddir data/4AA_sims --out_dir tps/results/0506_tps_1ns --batch_size 1
 
-# --sim_ckpt /home/xk/git_code/mdgen/workdir/tps_train/epoch=99-step=1100.ckpt --data_dir /home/xk/mount/md_bin --num_frames 100 --split splits/chain_test.csv --suffix _i10 --mddir /home/xk/mount/md_file --out_dir tps/results/0114_tps_1ns --batch_size 1
+
+
+

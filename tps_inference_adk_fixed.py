@@ -74,8 +74,8 @@ def get_sample(arr, seqres, start_idxs, end_idxs, start_state, end_state, num_fr
     # start_idxs = np.array([7782, 37704])
     # end_idxs = np.array([5191, 2644])
 
-    start_idx = 100
-    end_idx = 4900
+    start_idx = start_idxs
+    end_idx = end_idxs
     
     select_energy = energy 
     if (energy > -1000).all()  and len(energy) > 10:

@@ -34,6 +34,12 @@ https://doi.org/10.5281/zenodo.17731628
 
 ```
 
+## Data sets
+```
+https://doi.org/10.5281/zenodo.17555901
+
+```
+
 ## Inference
 ### MTB MmpL3 protein
 ```
